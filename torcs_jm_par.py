@@ -13,7 +13,6 @@ ophelp+= ' --host, -H <host>    TORCS server host. [localhost]\n'
 ophelp+= ' --port, -p <port>    TORCS port. [3001]\n'
 ophelp+= ' --id, -i <id>        ID for server. [SCR]\n'
 ophelp+= ' --steps, -m <#>      Maximum simulation steps. 1 sec ~ 50 steps. [100000]\n'
-ophelp+= ' --episodes, -e <#>   Maximum learning episodes. [1]\n'
 ophelp+= ' --track, -t <track>  Your name for this track. Used for learning. [unknown]\n'
 ophelp+= ' --stage, -s <#>      0=warm up, 1=qualifying, 2=race, 3=unknown. [3]\n'
 ophelp+= ' --debug, -d          Output full telemetry.\n'
@@ -491,29 +490,44 @@ if __name__ == "__main__":
 import math
 
 # ================= USER CONFIGURABLE PARAMETERS =================
-TARGET_SPEED = 100  # Target speed in km/h. Increasing this makes the car go faster but may reduce stability.
-STEER_GAIN = 30     # Steering sensitivity. Higher values make the car turn more aggressively.
-CENTERING_GAIN = 0.20  # How strongly the car corrects its position toward the center of the track.
-BRAKE_THRESHOLD = 0.9  # Angle threshold for braking. Lower values brake earlier.
+TARGET_SPEED = 100          # Target speed in km/h.
+STEER_GAIN = 30             # Steering sensitivity. Higher = more aggressive turns.
+CENTERING_GAIN = 0.20       # How strongly the car corrects toward the center of the track.
+STEER_SPEED_COEFF = 0.002   # Reduces steering at high speed. Higher = more damping.
+THROTTLE_GAIN = 0.02        # Throttle proportional gain. Higher = more aggressive acceleration.
+BRAKE_DIST_THRESHOLD = 30   # Distance ahead (metres) below which braking starts.
+BRAKE_ANGLE_THRESHOLD = 0.9 # Fallback angle threshold for braking.
+STUCK_THRESHOLD = 100       # Steps before triggering stuck recovery (~2 seconds).
+STUCK_REVERSE_STEER = 0.5   # Steering intensity while reversing out of a stuck position.
 GEAR_SPEEDS = [0, 20, 40, 80, 100, 180]  # Speed thresholds for gear shifting.
 ENABLE_TRACTION_CONTROL = True  # Toggle traction control system.
 
 # ================= HELPER FUNCTIONS =================
 def calculate_steering(S):
-    steer = (S['angle'] * STEER_GAIN / math.pi) - (S['trackPos'] * CENTERING_GAIN)
+    # Reduce steering sensitivity at high speed for stability.
+    speed_factor = 1.0 + STEER_SPEED_COEFF * S['speedX']
+    steer = (S['angle'] * STEER_GAIN / math.pi) / speed_factor
+    steer -= S['trackPos'] * CENTERING_GAIN
     return max(-1, min(1, steer))
 
-def calculate_throttle(S, R):
-    if S['speedX'] < TARGET_SPEED - (R['steer'] * 2.5):
-        accel = min(1.0, R['accel'] + 0.4)
-    else:
-        accel = max(0.0, R['accel'] - 0.2)
+def calculate_throttle(S):
+    # Proportional control: throttle is proportional to how far below target speed we are.
+    speed_error = TARGET_SPEED - S['speedX']
+    accel = speed_error * THROTTLE_GAIN
     if S['speedX'] < 10:
-        accel += 1 / (S['speedX'] + 0.1)
+        accel += 0.5  # extra boost to get rolling from rest
     return max(0.0, min(1.0, accel))
 
 def apply_brakes(S):
-    return 0.3 if abs(S['angle']) > BRAKE_THRESHOLD else 0.0
+    # Look-ahead: brake based on distance to track edge ahead.
+    front_distance = S['track'][9]
+    if front_distance < BRAKE_DIST_THRESHOLD:
+        brake = 0.8 * (1.0 - front_distance / BRAKE_DIST_THRESHOLD)
+        return min(1.0, brake)
+    # Fallback: brake if the car angle is already large.
+    if abs(S['angle']) > BRAKE_ANGLE_THRESHOLD:
+        return 0.3
+    return 0.0
 
 def shift_gears(S):
     gear = 1
@@ -528,14 +542,31 @@ def traction_control(S, accel):
             accel -= 0.1
     return max(0.0, accel)
 
+def check_stuck(S, R):
+    """If the car has been stuck for STUCK_THRESHOLD steps, reverse to get free.
+    Returns True if stuck recovery was applied (skips normal driving logic)."""
+    if S.get('stucktimer', 0) > STUCK_THRESHOLD:
+        R['gear']  = -1
+        R['accel'] = 0.8
+        R['brake'] = 0.0
+        R['steer'] = -STUCK_REVERSE_STEER * S['angle']
+        return True
+    return False
+
 # ================= MAIN DRIVE FUNCTION =================
 def drive_modular(c):
     S, R = c.S.d, c.R.d
-    R['steer'] = calculate_steering(S)
-    R['accel'] = calculate_throttle(S, R)
-    R['brake'] = apply_brakes(S)
-    R['accel'] = traction_control(S, R['accel'])
-    R['gear'] = shift_gears(S)
+
+    if check_stuck(S, R):           # 1. Stuck recovery takes priority over everything
+        return
+
+    R['steer'] = calculate_steering(S)          # 2. Speed-dependent steering
+    R['accel'] = calculate_throttle(S)           # 3. Proportional throttle
+    R['accel'] = traction_control(S, R['accel']) # 4. Anti-spin
+    R['brake'] = apply_brakes(S)                 # 5. Look-ahead braking
+    if R['brake'] > 0:                           # 6. Never brake and accelerate together
+        R['accel'] = 0.0
+    R['gear'] = shift_gears(S)                   # 7. Gear selection
     return
 
 # ================= MAIN LOOP =================
