@@ -25,6 +25,30 @@ python torcs_jm_par.py --port 3001
 
 TORCS server must already be running and configured.
 
+## Telemetry
+
+Every run automatically writes `telemetry.csv` next to the script (overwritten each run, so read it immediately after a run). Columns:
+
+| Column | Description |
+|--------|-------------|
+| `step` | Timestep index |
+| `speedX` | Longitudinal speed (km/h) |
+| `rpm` | Engine RPM |
+| `gear` | Current gear |
+| `accel` | Throttle output (0–1) |
+| `brake` | Brake output (0–1) |
+| `steer` | Steering output (-1–1) |
+| `trackPos` | Lateral position (-1 left, +1 right) |
+| `track9` | Forward distance sensor `track[9]` (metres) |
+| `target_speed` | Computed target from `dynamic_target_speed()` (km/h) |
+
+**How to diagnose with telemetry:**
+- `brake=0` when `speedX >> target_speed` → ABS or sigmoid bug zeroing brake
+- `accel` oscillating 0.9/1.0 → traction control threshold too low
+- `gear` hunting (2→3→2→3) → `GEAR_SHIFT_DELAY` too small
+- `target_speed` drops suddenly mid-straight → sensor discontinuity in `dynamic_target_speed`
+- `trackPos` drifting past ±1 → car off track, steering attenuation too aggressive
+
 ## Key Sensors (`S.d`)
 
 | Key | Description |
