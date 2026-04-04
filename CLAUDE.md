@@ -94,3 +94,5 @@ ENABLE_TRACTION_CONTROL = True
 | `ABS_SLIP_THRESHOLD` | 2.0 | 2.0 | m/s — ABS engagement threshold |
 | `ABS_MIN_SPEED` | 3.0 | 3.0 | m/s — minimum speed for ABS |
 | `ABS_RANGE` | 3.0 | 3.0 | m/s — brake scaling range |
+| `TC_SLIP_THRESHOLD` | 5.0 | 5.0 | rear−front wheel spin diff triggering TC |
+| `TC_REDUCTION` | 0.30 | 0.30 | throttle cut per TC trigger |

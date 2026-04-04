@@ -440,7 +440,7 @@ import math
 # ================= USER CONFIGURABLE PARAMETERS =================
 
 # Section split: distFromStart (metres) below = fast, above = technical
-SECTION_SPLIT_DIST = 1800
+SECTION_SPLIT_DIST = 1900
 
 # Shared (not section-dependent)
 STUCK_THRESHOLD        = 100    # Steps before triggering stuck recovery (~2 seconds).
@@ -449,35 +449,37 @@ ENABLE_TRACTION_CONTROL = True  # Toggle traction control system.
 
 # --- Fast section (long straight, gentle turns) ---
 FAST = {
-    'STEER_GAIN':          50,      # Steering sensitivity.
-    'CENTERING_GAIN':      0.20,    # Track-centre correction strength.
+    'STEER_GAIN':          45,      # Steering sensitivity.
+    'CENTERING_GAIN':      0.70,    # Track-centre correction strength.
     'STEER_LOCK':          0.366,   # Max steering lock in radians (~21°).
     'STEER_ATTN_SPEED':    80,      # km/h above which attenuation kicks in.
     'STEER_ATTN_COEFF':    0.05,    # Speed-based attenuation multiplier.
-    'RPM_UPSHIFT':         18500,   # Upshift RPM.
-    'RPM_DOWNSHIFT':       [0, 3300, 6200, 7000, 7300, 7700],
+    'RPM_UPSHIFT':         19000,   # Upshift RPM.
+    'RPM_DOWNSHIFT':       [0, 3300, 5200, 7000, 7300, 7700],
     'GEAR_SHIFT_DELAY':    10,      # Steps cooldown between shifts.
     'MAX_SPEED':           300,     # km/h — full throttle on a straight.
     'MIN_SPEED':           80,      # km/h — minimum in fast-section turns.
     'LOOK_AHEAD_FAR':      110,     # metres — full speed above this.
-    'ACCEL_SIGMOID_SCALE': 3.29,    # Throttle sigmoid steepness.
-    'BRAKE_SIGMOID_SCALE': 3.29,    # Brake sigmoid steepness.
+    'ACCEL_SIGMOID_SCALE': 3.42,    # Throttle sigmoid steepness.
+    'BRAKE_SIGMOID_SCALE': 3.42,    # Brake sigmoid steepness.
     'ABS_SLIP_THRESHOLD':  2.0,     # m/s — wheel slip above which ABS engages.
     'ABS_MIN_SPEED':       3.0,     # m/s — don't apply ABS below this speed.
     'ABS_RANGE':           3.0,     # m/s — slip range over which brake is scaled.
+    'TC_SLIP_THRESHOLD':   4.0,     # wheel spin diff above which TC cuts throttle.
+    'TC_REDUCTION':        0.20,    # throttle reduction per TC trigger.
 }
 
 # --- Technical section (tight corners) ---
 TECH = {
-    'STEER_GAIN':          50,      # Steering sensitivity.
-    'CENTERING_GAIN':      0.20,    # Track-centre correction strength.
+    'STEER_GAIN':          55,      # Steering sensitivity.
+    'CENTERING_GAIN':      0.30,    # Track-centre correction strength.
     'STEER_LOCK':          0.366,   # Max steering lock in radians (~21°).
-    'STEER_ATTN_SPEED':    60,      # km/h above which attenuation kicks in (lower for tighter turns).
+    'STEER_ATTN_SPEED':    80,      # km/h above which attenuation kicks in (lower for tighter turns).
     'STEER_ATTN_COEFF':    0.05,    # Speed-based attenuation multiplier.
-    'RPM_UPSHIFT':         18500,   # Upshift RPM.
+    'RPM_UPSHIFT':         18000,   # Upshift RPM.
     'RPM_DOWNSHIFT':       [0, 3300, 6200, 7000, 7300, 7700],
     'GEAR_SHIFT_DELAY':    10,      # Steps cooldown between shifts.
-    'MAX_SPEED':           200,     # km/h — capped in technical section.
+    'MAX_SPEED':           300,     # km/h — capped in technical section.
     'MIN_SPEED':           56,      # km/h — minimum in tight turns.
     'LOOK_AHEAD_FAR':      110,     # metres — full speed above this.
     'ACCEL_SIGMOID_SCALE': 3.29,    # Throttle sigmoid steepness.
@@ -485,6 +487,8 @@ TECH = {
     'ABS_SLIP_THRESHOLD':  2.0,     # m/s — wheel slip above which ABS engages.
     'ABS_MIN_SPEED':       3.0,     # m/s — don't apply ABS below this speed.
     'ABS_RANGE':           3.0,     # m/s — slip range over which brake is scaled.
+    'TC_SLIP_THRESHOLD':   5,     # wheel spin diff above which TC cuts throttle.
+    'TC_REDUCTION':        0.30,    # throttle reduction per TC trigger.
 }
 
 # ================= SECTION SELECTOR =================
@@ -541,10 +545,11 @@ def shift_gears(S, P):
         return gear - 1
     return max(1, gear)
 
-def traction_control(S, accel):
+def traction_control(S, accel, P):
     if ENABLE_TRACTION_CONTROL:
-        if ((S['wheelSpinVel'][2] + S['wheelSpinVel'][3]) - (S['wheelSpinVel'][0] + S['wheelSpinVel'][1])) > 4:
-            accel -= 0.30
+        slip = (S['wheelSpinVel'][2] + S['wheelSpinVel'][3]) - (S['wheelSpinVel'][0] + S['wheelSpinVel'][1])
+        if slip > P['TC_SLIP_THRESHOLD']:
+            accel -= P['TC_REDUCTION']
     return max(0.0, accel)
 
 def check_stuck(S, R):
@@ -569,7 +574,7 @@ def drive_modular(c):
 
     R['steer'] = calculate_steering(S, P)        # 3. Speed-dependent steering
     R['accel'] = calculate_throttle(S, P)        # 4. Proportional throttle
-    R['accel'] = traction_control(S, R['accel']) # 5. Anti-spin
+    R['accel'] = traction_control(S, R['accel'], P) # 5. Anti-spin
     R['brake'] = apply_brakes(S, P)              # 6. Look-ahead braking
     if R['brake'] > 0:                           # 7. Never brake and accelerate together
         R['accel'] = 0.0
