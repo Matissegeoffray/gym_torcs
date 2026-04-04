@@ -438,86 +438,105 @@ def destringify(s):
 import math
 
 # ================= USER CONFIGURABLE PARAMETERS =================
-STEER_GAIN = 50             # Steering sensitivity. Higher = more aggressive turns.
-CENTERING_GAIN = 0.20       # How strongly the car corrects toward the center of the track.
-STUCK_THRESHOLD = 100       # Steps before triggering stuck recovery (~2 seconds).
-STUCK_REVERSE_STEER = 0.5   # Steering intensity while reversing out of a stuck position.
+
+# Section split: distFromStart (metres) below = fast, above = technical
+SECTION_SPLIT_DIST = 1800
+
+# Shared (not section-dependent)
+STUCK_THRESHOLD        = 100    # Steps before triggering stuck recovery (~2 seconds).
+STUCK_REVERSE_STEER    = 0.5    # Steering intensity while reversing.
 ENABLE_TRACTION_CONTROL = True  # Toggle traction control system.
 
-# Gear shifting (RPM-based)
-RPM_UPSHIFT      = 18500                        # Upshift at this RPM (all gears).
-RPM_DOWNSHIFT    = [0, 3300, 6200, 7000, 7300, 7700]  # Downshift RPM thresholds per gear (indexed by current gear).
-GEAR_SHIFT_DELAY = 10                            # Steps to wait after a shift before shifting again (prevents hunting).
+# --- Fast section (long straight, gentle turns) ---
+FAST = {
+    'STEER_GAIN':          50,      # Steering sensitivity.
+    'CENTERING_GAIN':      0.20,    # Track-centre correction strength.
+    'STEER_LOCK':          0.366,   # Max steering lock in radians (~21°).
+    'STEER_ATTN_SPEED':    80,      # km/h above which attenuation kicks in.
+    'STEER_ATTN_COEFF':    0.05,    # Speed-based attenuation multiplier.
+    'RPM_UPSHIFT':         18500,   # Upshift RPM.
+    'RPM_DOWNSHIFT':       [0, 3300, 6200, 7000, 7300, 7700],
+    'GEAR_SHIFT_DELAY':    10,      # Steps cooldown between shifts.
+    'MAX_SPEED':           300,     # km/h — full throttle on a straight.
+    'MIN_SPEED':           80,      # km/h — minimum in fast-section turns.
+    'LOOK_AHEAD_FAR':      110,     # metres — full speed above this.
+    'ACCEL_SIGMOID_SCALE': 3.29,    # Throttle sigmoid steepness.
+    'BRAKE_SIGMOID_SCALE': 3.29,    # Brake sigmoid steepness.
+    'ABS_SLIP_THRESHOLD':  2.0,     # m/s — wheel slip above which ABS engages.
+    'ABS_MIN_SPEED':       3.0,     # m/s — don't apply ABS below this speed.
+    'ABS_RANGE':           3.0,     # m/s — slip range over which brake is scaled.
+}
 
-# Dynamic target speed
-MAX_SPEED       = 300   # km/h — full throttle on a straight.
-MIN_SPEED       = 56   # km/h — minimum target speed in tight turns.
-LOOK_AHEAD_FAR  = 110  # metres — full speed above this forward distance.
-LOOK_AHEAD_NEAR = 70    # metres — start scaling speed below this.
+# --- Technical section (tight corners) ---
+TECH = {
+    'STEER_GAIN':          50,      # Steering sensitivity.
+    'CENTERING_GAIN':      0.20,    # Track-centre correction strength.
+    'STEER_LOCK':          0.366,   # Max steering lock in radians (~21°).
+    'STEER_ATTN_SPEED':    60,      # km/h above which attenuation kicks in (lower for tighter turns).
+    'STEER_ATTN_COEFF':    0.05,    # Speed-based attenuation multiplier.
+    'RPM_UPSHIFT':         18500,   # Upshift RPM.
+    'RPM_DOWNSHIFT':       [0, 3300, 6200, 7000, 7300, 7700],
+    'GEAR_SHIFT_DELAY':    10,      # Steps cooldown between shifts.
+    'MAX_SPEED':           200,     # km/h — capped in technical section.
+    'MIN_SPEED':           56,      # km/h — minimum in tight turns.
+    'LOOK_AHEAD_FAR':      110,     # metres — full speed above this.
+    'ACCEL_SIGMOID_SCALE': 3.29,    # Throttle sigmoid steepness.
+    'BRAKE_SIGMOID_SCALE': 3.29,    # Brake sigmoid steepness.
+    'ABS_SLIP_THRESHOLD':  2.0,     # m/s — wheel slip above which ABS engages.
+    'ABS_MIN_SPEED':       3.0,     # m/s — don't apply ABS below this speed.
+    'ABS_RANGE':           3.0,     # m/s — slip range over which brake is scaled.
+}
 
-# Sigmoid acceleration/braking
-ACCEL_SIGMOID_SCALE = 3.29
-BRAKE_SIGMOID_SCALE = 3.29 # Steepness of sigmoid curve (higher = sharper response).
-
-# Steering attenuation at high speed
-STEER_LOCK       = 0.366   # Max steering lock in radians (~21°).
-STEER_ATTN_SPEED = 80      # km/h above which attenuation kicks in.
-STEER_ATTN_COEFF = 0.05   # Multiplier for speed-based attenuation factor.
-
-# Software ABS
-ABS_SLIP_THRESHOLD = 2.0   # m/s — wheel slip above which ABS engages.
-ABS_MIN_SPEED      = 3.0   # m/s — don't apply ABS below this speed.
-ABS_RANGE          = 3.0   # m/s — slip range over which brake is scaled.
+# ================= SECTION SELECTOR =================
+def get_params(S):
+    """Return FAST or TECH params dict based on current distFromStart."""
+    if S.get('distFromStart', 0) < SECTION_SPLIT_DIST:
+        return FAST
+    return TECH
 
 # ================= HELPER FUNCTIONS =================
-def calculate_steering(S):
-    # Base steering from track angle and centering.
-    steer = (S['angle'] * STEER_GAIN / math.pi) - S['trackPos'] * CENTERING_GAIN
-    # Attenuate steering above STEER_ATTN_SPEED to prevent spinouts.
+def calculate_steering(S, P):
+    steer = (S['angle'] * P['STEER_GAIN'] / math.pi) - S['trackPos'] * P['CENTERING_GAIN']
     speed = S['speedX']
-    if speed > STEER_ATTN_SPEED:
-        steer /= 1.0 + STEER_LOCK * (speed - STEER_ATTN_SPEED) * STEER_ATTN_COEFF
+    if speed > P['STEER_ATTN_SPEED']:
+        steer /= 1.0 + P['STEER_LOCK'] * (speed - P['STEER_ATTN_SPEED']) * P['STEER_ATTN_COEFF']
     return max(-1, min(1, steer))
 
-def dynamic_target_speed(S):
-    # Use straight-ahead sensor for target speed. LOOK_AHEAD_FAR=200 ensures braking starts early.
-    dist = min(S['track'][9], LOOK_AHEAD_FAR)
-    dist = max(0.0, dist)   # clamp negative (off-track) values
-    return MIN_SPEED + (dist / LOOK_AHEAD_FAR) * (MAX_SPEED - MIN_SPEED)
+def dynamic_target_speed(S, P):
+    dist = min(S['track'][9], P['LOOK_AHEAD_FAR'])
+    dist = max(0.0, dist)
+    return P['MIN_SPEED'] + (dist / P['LOOK_AHEAD_FAR']) * (P['MAX_SPEED'] - P['MIN_SPEED'])
 
-def calculate_throttle(S):
-    # Sigmoid control: immediate proportional response vs. slow linear increments.
-    target = dynamic_target_speed(S)
-    raw = 2.0 / (1.0 + math.exp(ACCEL_SIGMOID_SCALE * (S['speedX'] - target))) - 1.0
-    return max(0.0, raw)   # positive half only; braking handled separately
+def calculate_throttle(S, P):
+    target = dynamic_target_speed(S, P)
+    raw = 2.0 / (1.0 + math.exp(P['ACCEL_SIGMOID_SCALE'] * (S['speedX'] - target))) - 1.0
+    return max(0.0, raw)
 
-def apply_abs(S, brake):
+def apply_abs(S, brake, P):
     # ABS disabled — broken slip direction caused it to zero out brake on rear-wheel-drive.
     return brake
 
-def apply_brakes(S):
-    # Sigmoid negative half drives braking; ABS prevents wheel lockup.
-    target = dynamic_target_speed(S)
-    raw = 2.0 / (1.0 + math.exp(BRAKE_SIGMOID_SCALE * (S['speedX'] - target))) - 1.0
+def apply_brakes(S, P):
+    target = dynamic_target_speed(S, P)
+    raw = 2.0 / (1.0 + math.exp(P['BRAKE_SIGMOID_SCALE'] * (S['speedX'] - target))) - 1.0
     if raw < 0:
-        return apply_abs(S, -raw)
+        return apply_abs(S, -raw, P)
     return 0.0
 
-_last_shift_step = -GEAR_SHIFT_DELAY  # step counter for gear-shift cooldown
+_last_shift_step = -FAST['GEAR_SHIFT_DELAY']
 _step_counter = 0
 
-def shift_gears(S):
+def shift_gears(S, P):
     global _last_shift_step, _step_counter
     _step_counter += 1
     gear = int(S.get('gear', 1))
     rpm  = S.get('rpm', 0)
-    # Enforce cooldown: don't shift within GEAR_SHIFT_DELAY steps of the last shift.
-    if _step_counter - _last_shift_step < GEAR_SHIFT_DELAY:
+    if _step_counter - _last_shift_step < P['GEAR_SHIFT_DELAY']:
         return max(1, gear)
-    if gear < 6 and rpm > RPM_UPSHIFT:
+    if gear < 6 and rpm > P['RPM_UPSHIFT']:
         _last_shift_step = _step_counter
         return gear + 1
-    if gear > 1 and rpm < RPM_DOWNSHIFT[gear - 1]:
+    if gear > 1 and rpm < P['RPM_DOWNSHIFT'][gear - 1]:
         _last_shift_step = _step_counter
         return gear - 1
     return max(1, gear)
@@ -543,16 +562,18 @@ def check_stuck(S, R):
 def drive_modular(c):
     S, R = c.S.d, c.R.d
 
-    if check_stuck(S, R):           # 1. Stuck recovery takes priority over everything
+    if check_stuck(S, R):                        # 1. Stuck recovery takes priority
         return
 
-    R['steer'] = calculate_steering(S)          # 2. Speed-dependent steering
-    R['accel'] = calculate_throttle(S)           # 3. Proportional throttle
-    R['accel'] = traction_control(S, R['accel']) # 4. Anti-spin
-    R['brake'] = apply_brakes(S)                 # 5. Look-ahead braking
-    if R['brake'] > 0:                           # 6. Never brake and accelerate together
+    P = get_params(S)                            # 2. Select section parameters
+
+    R['steer'] = calculate_steering(S, P)        # 3. Speed-dependent steering
+    R['accel'] = calculate_throttle(S, P)        # 4. Proportional throttle
+    R['accel'] = traction_control(S, R['accel']) # 5. Anti-spin
+    R['brake'] = apply_brakes(S, P)              # 6. Look-ahead braking
+    if R['brake'] > 0:                           # 7. Never brake and accelerate together
         R['accel'] = 0.0
-    R['gear'] = shift_gears(S)                   # 7. Gear selection
+    R['gear'] = shift_gears(S, P)               # 8. Gear selection
     return
 
 # ================= MAIN LOOP =================
@@ -561,7 +582,7 @@ if __name__ == "__main__":
     log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'telemetry.csv')
     log_file = open(log_path, 'w', newline='')
     log_writer = csv.writer(log_file)
-    log_writer.writerow(['step', 'speedX', 'rpm', 'gear', 'accel', 'brake', 'steer', 'trackPos', 'track9', 'target_speed'])
+    log_writer.writerow(['step', 'speedX', 'rpm', 'gear', 'accel', 'brake', 'steer', 'trackPos', 'track9', 'target_speed', 'distFromStart'])
 
     C = Client(p=3001)
     for step in range(C.maxSteps, 0, -1):
@@ -578,7 +599,8 @@ if __name__ == "__main__":
             round(R.get('steer', 0), 3),
             round(S.get('trackPos', 0), 3),
             round(S['track'][9] if 'track' in S else 0, 1),
-            round(dynamic_target_speed(S) if 'track' in S else 0, 1),
+            round(dynamic_target_speed(S, get_params(S)) if 'track' in S else 0, 1),
+            round(S.get('distFromStart', 0), 1),
         ])
         C.respond_to_server()
     C.shutdown()
