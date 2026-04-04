@@ -439,8 +439,12 @@ import math
 
 # ================= USER CONFIGURABLE PARAMETERS =================
 
-# Section split: distFromStart (metres) below = fast, above = technical
-SECTION_SPLIT_DIST = 1900
+# Section boundaries (metres of distFromStart):
+#   0 → FAST_END       : FAST section
+#   FAST_END → LIGHT_END : LIGHT section
+#   LIGHT_END → end    : TECH section
+FAST_END  = 800
+LIGHT_END = 1900
 
 # Shared (not section-dependent)
 STUCK_THRESHOLD        = 100    # Steps before triggering stuck recovery (~2 seconds).
@@ -469,6 +473,28 @@ FAST = {
     'TC_REDUCTION':        0.20,    # throttle reduction per TC trigger.
 }
 
+# --- Light section (even faster, between fast and technical) ---
+LIGHT = {
+    'STEER_GAIN':          50,      # Steering sensitivity.
+    'CENTERING_GAIN':      0.70,    # Track-centre correction strength.
+    'STEER_LOCK':          0.366,   # Max steering lock in radians (~21°).
+    'STEER_ATTN_SPEED':    100,      # km/h above which attenuation kicks in.
+    'STEER_ATTN_COEFF':    0.05,    # Speed-based attenuation multiplier.
+    'RPM_UPSHIFT':         20000    ,   # Upshift RPM.
+    'RPM_DOWNSHIFT':       [0, 3300, 5200, 7000, 7300, 7700],
+    'GEAR_SHIFT_DELAY':    10,      # Steps cooldown between shifts.
+    'MAX_SPEED':           300,     # km/h — full throttle on a straight.
+    'MIN_SPEED':           80,      # km/h — minimum in fast-section turns.
+    'LOOK_AHEAD_FAR':      110,     # metres — full speed above this.
+    'ACCEL_SIGMOID_SCALE': 4.29,    # Throttle sigmoid steepness.
+    'BRAKE_SIGMOID_SCALE': 4.29,    # Brake sigmoid steepness.
+    'ABS_SLIP_THRESHOLD':  2.0,     # m/s — wheel slip above which ABS engages.
+    'ABS_MIN_SPEED':       3.0,     # m/s — don't apply ABS below this speed.
+    'ABS_RANGE':           3.0,     # m/s — slip range over which brake is scaled.
+    'TC_SLIP_THRESHOLD':   4.0,     # wheel spin diff above which TC cuts throttle.
+    'TC_REDUCTION':        0.3,    # throttle reduction per TC trigger.
+}
+
 # --- Technical section (tight corners) ---
 TECH = {
     'STEER_GAIN':          55,      # Steering sensitivity.
@@ -487,15 +513,18 @@ TECH = {
     'ABS_SLIP_THRESHOLD':  2.0,     # m/s — wheel slip above which ABS engages.
     'ABS_MIN_SPEED':       3.0,     # m/s — don't apply ABS below this speed.
     'ABS_RANGE':           3.0,     # m/s — slip range over which brake is scaled.
-    'TC_SLIP_THRESHOLD':   5,     # wheel spin diff above which TC cuts throttle.
+    'TC_SLIP_THRESHOLD':   5,     # wheel sp+in diff above which TC cuts throttle.
     'TC_REDUCTION':        0.30,    # throttle reduction per TC trigger.
 }
 
 # ================= SECTION SELECTOR =================
 def get_params(S):
-    """Return FAST or TECH params dict based on current distFromStart."""
-    if S.get('distFromStart', 0) < SECTION_SPLIT_DIST:
+    """Return FAST, LIGHT, or TECH params dict based on current distFromStart."""
+    dist = S.get('distFromStart', 0)
+    if dist < FAST_END:
         return FAST
+    if dist < LIGHT_END:
+        return LIGHT
     return TECH
 
 # ================= HELPER FUNCTIONS =================
