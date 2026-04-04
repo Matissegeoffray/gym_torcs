@@ -435,111 +435,97 @@ def destringify(s):
         else:
             return [destringify(i) for i in s]
 
-def drive_example(c):
-    '''This is only an example. It will get around the track but the
-    correct thing to do is write your own `drive()` function.'''
-    S,R= c.S.d,c.R.d
-    target_speed=160
-
-    R['steer']= S['angle']*25 / PI
-    R['steer']-= S['trackPos']*.25
-
-    R['accel'] = max(0.0, min(1.0, R['accel']))
-    
-
-    if S['speedX'] < target_speed - (R['steer']*2.5):
-        R['accel']+= .4
-    else:
-        R['accel']-= .2
-    if S['speedX']<10:
-       R['accel']+= 1/(S['speedX']+.1)
-
-    if ((S['wheelSpinVel'][2]+S['wheelSpinVel'][3]) -
-       (S['wheelSpinVel'][0]+S['wheelSpinVel'][1]) > 2):
-       R['accel']-= 0.1
-
-
-
-    R['gear']=1
-    if S['speedX']>60:
-        R['gear']=2
-    if S['speedX']>100:
-        R['gear']=3
-    if S['speedX']>140:
-        R['gear']=4
-    if S['speedX']>190:
-        R['gear']=5
-    if S['speedX']>220:
-        R['gear']=6
-    return
-
-if __name__ == "__main__":
-    C= Client(p=3001)
-    for step in range(C.maxSteps,0,-1):
-        C.get_servers_input()
-        drive_example(C)
-        C.respond_to_server()
-    C.shutdown()
-
-
-
-#############################################
-# MODULAR DRIVE LOGIC WITH USER PARAMETERS  #
-#############################################
-
 import math
 
 # ================= USER CONFIGURABLE PARAMETERS =================
-TARGET_SPEED = 100          # Target speed in km/h.
-STEER_GAIN = 30             # Steering sensitivity. Higher = more aggressive turns.
+STEER_GAIN = 50             # Steering sensitivity. Higher = more aggressive turns.
 CENTERING_GAIN = 0.20       # How strongly the car corrects toward the center of the track.
-STEER_SPEED_COEFF = 0.002   # Reduces steering at high speed. Higher = more damping.
-THROTTLE_GAIN = 0.02        # Throttle proportional gain. Higher = more aggressive acceleration.
-BRAKE_DIST_THRESHOLD = 30   # Distance ahead (metres) below which braking starts.
-BRAKE_ANGLE_THRESHOLD = 0.9 # Fallback angle threshold for braking.
 STUCK_THRESHOLD = 100       # Steps before triggering stuck recovery (~2 seconds).
 STUCK_REVERSE_STEER = 0.5   # Steering intensity while reversing out of a stuck position.
-GEAR_SPEEDS = [0, 20, 40, 80, 100, 180]  # Speed thresholds for gear shifting.
 ENABLE_TRACTION_CONTROL = True  # Toggle traction control system.
+
+# Gear shifting (RPM-based)
+RPM_UPSHIFT      = 18500                        # Upshift at this RPM (all gears).
+RPM_DOWNSHIFT    = [0, 3300, 6200, 7000, 7300, 7700]  # Downshift RPM thresholds per gear (indexed by current gear).
+GEAR_SHIFT_DELAY = 10                            # Steps to wait after a shift before shifting again (prevents hunting).
+
+# Dynamic target speed
+MAX_SPEED       = 300   # km/h — full throttle on a straight.
+MIN_SPEED       = 56   # km/h — minimum target speed in tight turns.
+LOOK_AHEAD_FAR  = 110  # metres — full speed above this forward distance.
+LOOK_AHEAD_NEAR = 70    # metres — start scaling speed below this.
+
+# Sigmoid acceleration/braking
+ACCEL_SIGMOID_SCALE = 3.29
+BRAKE_SIGMOID_SCALE = 3.29 # Steepness of sigmoid curve (higher = sharper response).
+
+# Steering attenuation at high speed
+STEER_LOCK       = 0.366   # Max steering lock in radians (~21°).
+STEER_ATTN_SPEED = 80      # km/h above which attenuation kicks in.
+STEER_ATTN_COEFF = 0.05   # Multiplier for speed-based attenuation factor.
+
+# Software ABS
+ABS_SLIP_THRESHOLD = 2.0   # m/s — wheel slip above which ABS engages.
+ABS_MIN_SPEED      = 3.0   # m/s — don't apply ABS below this speed.
+ABS_RANGE          = 3.0   # m/s — slip range over which brake is scaled.
 
 # ================= HELPER FUNCTIONS =================
 def calculate_steering(S):
-    # Reduce steering sensitivity at high speed for stability.
-    speed_factor = 1.0 + STEER_SPEED_COEFF * S['speedX']
-    steer = (S['angle'] * STEER_GAIN / math.pi) / speed_factor
-    steer -= S['trackPos'] * CENTERING_GAIN
+    # Base steering from track angle and centering.
+    steer = (S['angle'] * STEER_GAIN / math.pi) - S['trackPos'] * CENTERING_GAIN
+    # Attenuate steering above STEER_ATTN_SPEED to prevent spinouts.
+    speed = S['speedX']
+    if speed > STEER_ATTN_SPEED:
+        steer /= 1.0 + STEER_LOCK * (speed - STEER_ATTN_SPEED) * STEER_ATTN_COEFF
     return max(-1, min(1, steer))
 
+def dynamic_target_speed(S):
+    # Use straight-ahead sensor for target speed. LOOK_AHEAD_FAR=200 ensures braking starts early.
+    dist = min(S['track'][9], LOOK_AHEAD_FAR)
+    dist = max(0.0, dist)   # clamp negative (off-track) values
+    return MIN_SPEED + (dist / LOOK_AHEAD_FAR) * (MAX_SPEED - MIN_SPEED)
+
 def calculate_throttle(S):
-    # Proportional control: throttle is proportional to how far below target speed we are.
-    speed_error = TARGET_SPEED - S['speedX']
-    accel = speed_error * THROTTLE_GAIN
-    if S['speedX'] < 10:
-        accel += 0.5  # extra boost to get rolling from rest
-    return max(0.0, min(1.0, accel))
+    # Sigmoid control: immediate proportional response vs. slow linear increments.
+    target = dynamic_target_speed(S)
+    raw = 2.0 / (1.0 + math.exp(ACCEL_SIGMOID_SCALE * (S['speedX'] - target))) - 1.0
+    return max(0.0, raw)   # positive half only; braking handled separately
+
+def apply_abs(S, brake):
+    # ABS disabled — broken slip direction caused it to zero out brake on rear-wheel-drive.
+    return brake
 
 def apply_brakes(S):
-    # Look-ahead: brake based on distance to track edge ahead.
-    front_distance = S['track'][9]
-    if front_distance < BRAKE_DIST_THRESHOLD:
-        brake = 0.8 * (1.0 - front_distance / BRAKE_DIST_THRESHOLD)
-        return min(1.0, brake)
-    # Fallback: brake if the car angle is already large.
-    if abs(S['angle']) > BRAKE_ANGLE_THRESHOLD:
-        return 0.3
+    # Sigmoid negative half drives braking; ABS prevents wheel lockup.
+    target = dynamic_target_speed(S)
+    raw = 2.0 / (1.0 + math.exp(BRAKE_SIGMOID_SCALE * (S['speedX'] - target))) - 1.0
+    if raw < 0:
+        return apply_abs(S, -raw)
     return 0.0
 
+_last_shift_step = -GEAR_SHIFT_DELAY  # step counter for gear-shift cooldown
+_step_counter = 0
+
 def shift_gears(S):
-    gear = 1
-    for i, speed in enumerate(GEAR_SPEEDS):
-        if S['speedX'] > speed:
-            gear = i + 1
-    return min(gear, 6)
+    global _last_shift_step, _step_counter
+    _step_counter += 1
+    gear = int(S.get('gear', 1))
+    rpm  = S.get('rpm', 0)
+    # Enforce cooldown: don't shift within GEAR_SHIFT_DELAY steps of the last shift.
+    if _step_counter - _last_shift_step < GEAR_SHIFT_DELAY:
+        return max(1, gear)
+    if gear < 6 and rpm > RPM_UPSHIFT:
+        _last_shift_step = _step_counter
+        return gear + 1
+    if gear > 1 and rpm < RPM_DOWNSHIFT[gear - 1]:
+        _last_shift_step = _step_counter
+        return gear - 1
+    return max(1, gear)
 
 def traction_control(S, accel):
     if ENABLE_TRACTION_CONTROL:
-        if ((S['wheelSpinVel'][2] + S['wheelSpinVel'][3]) - (S['wheelSpinVel'][0] + S['wheelSpinVel'][1])) > 2:
-            accel -= 0.1
+        if ((S['wheelSpinVel'][2] + S['wheelSpinVel'][3]) - (S['wheelSpinVel'][0] + S['wheelSpinVel'][1])) > 4:
+            accel -= 0.30
     return max(0.0, accel)
 
 def check_stuck(S, R):
@@ -571,9 +557,30 @@ def drive_modular(c):
 
 # ================= MAIN LOOP =================
 if __name__ == "__main__":
+    import csv, os
+    log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'telemetry.csv')
+    log_file = open(log_path, 'w', newline='')
+    log_writer = csv.writer(log_file)
+    log_writer.writerow(['step', 'speedX', 'rpm', 'gear', 'accel', 'brake', 'steer', 'trackPos', 'track9', 'target_speed'])
+
     C = Client(p=3001)
     for step in range(C.maxSteps, 0, -1):
         C.get_servers_input()
         drive_modular(C)
+        S, R = C.S.d, C.R.d
+        log_writer.writerow([
+            C.maxSteps - step,
+            round(S.get('speedX', 0), 2),
+            round(S.get('rpm', 0), 0),
+            S.get('gear', 0),
+            round(R.get('accel', 0), 3),
+            round(R.get('brake', 0), 3),
+            round(R.get('steer', 0), 3),
+            round(S.get('trackPos', 0), 3),
+            round(S['track'][9] if 'track' in S else 0, 1),
+            round(dynamic_target_speed(S) if 'track' in S else 0, 1),
+        ])
         C.respond_to_server()
     C.shutdown()
+    log_file.close()
+    print(f"Telemetry saved to {log_path}")
