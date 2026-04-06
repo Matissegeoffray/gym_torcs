@@ -87,11 +87,11 @@ ENABLE_TRACTION_CONTROL = True
 | `RPM_UPSHIFT` | 19000 | 19000 | 18000 | Upshift RPM |
 | `RPM_DOWNSHIFT` | [0,3300,5200,7000,7300,7700] | same | [0,3300,6200,7000,7300,7700] | Downshift thresholds per gear |
 | `GEAR_SHIFT_DELAY` | 10 | 10 | 10 | Steps cooldown between shifts |
-| `MAX_SPEED` | 300 | 300 | 300 | km/h — section top speed |
+| `MAX_SPEED` | 300 | 300 | 305 | km/h — section top speed |
 | `MIN_SPEED` | 80 | 80 | 56 | km/h — section minimum speed |
 | `LOOK_AHEAD_FAR` | 110 | 110 | 110 | metres — full speed above this |
-| `ACCEL_SIGMOID_SCALE` | 3.42 | 3.42 | 3.29 | Throttle sigmoid steepness |
-| `BRAKE_SIGMOID_SCALE` | 3.42 | 3.42 | 3.29 | Brake sigmoid steepness |
+| `ACCEL_SIGMOID_SCALE` | 0.5 | 0.5 | 0.4 | Throttle sigmoid steepness |
+| `BRAKE_SIGMOID_SCALE` | 0.5 | 0.5 | 0.4 | Brake sigmoid steepness |
 | `ABS_SLIP_THRESHOLD` | 2.0 | 2.0 | 2.0 | m/s — ABS engagement threshold |
 | `ABS_MIN_SPEED` | 3.0 | 3.0 | 3.0 | m/s — minimum speed for ABS |
 | `ABS_RANGE` | 3.0 | 3.0 | 3.0 | m/s — brake scaling range |
