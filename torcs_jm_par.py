@@ -464,8 +464,8 @@ FAST = {
     'MAX_SPEED':           300,     # km/h — full throttle on a straight.
     'MIN_SPEED':           80,      # km/h — minimum in fast-section turns.
     'LOOK_AHEAD_FAR':      110,     # metres — full speed above this.
-    'ACCEL_SIGMOID_SCALE': 3.42,    # Throttle sigmoid steepness.
-    'BRAKE_SIGMOID_SCALE': 3.42,    # Brake sigmoid steepness.
+    'ACCEL_SIGMOID_SCALE': 0.5,    # Throttle sigmoid steepness.
+    'BRAKE_SIGMOID_SCALE': 0.5,    # Brake sigmoid steepness.
     'ABS_SLIP_THRESHOLD':  2.0,     # m/s — wheel slip above which ABS engages.
     'ABS_MIN_SPEED':       3.0,     # m/s — don't apply ABS below this speed.
     'ABS_RANGE':           3.0,     # m/s — slip range over which brake is scaled.
@@ -505,11 +505,11 @@ TECH = {
     'RPM_UPSHIFT':         18000,   # Upshift RPM.
     'RPM_DOWNSHIFT':       [0, 3300, 6200, 7000, 7300, 7700],
     'GEAR_SHIFT_DELAY':    10,      # Steps cooldown between shifts.
-    'MAX_SPEED':           300,     # km/h — capped in technical section.
+    'MAX_SPEED':           305,     # km/h — capped in technical section.
     'MIN_SPEED':           56,      # km/h — minimum in tight turns.
     'LOOK_AHEAD_FAR':      110,     # metres — full speed above this.
-    'ACCEL_SIGMOID_SCALE': 3.29,    # Throttle sigmoid steepness.
-    'BRAKE_SIGMOID_SCALE': 3.29,    # Brake sigmoid steepness.
+    'ACCEL_SIGMOID_SCALE': 0.4,    # Throttle sigmoid steepness.
+    'BRAKE_SIGMOID_SCALE': 0.4,    # Brake sigmoid steepness.
     'ABS_SLIP_THRESHOLD':  2.0,     # m/s — wheel slip above which ABS engages.
     'ABS_MIN_SPEED':       3.0,     # m/s — don't apply ABS below this speed.
     'ABS_RANGE':           3.0,     # m/s — slip range over which brake is scaled.
