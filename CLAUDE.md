@@ -64,41 +64,36 @@ Every run automatically writes `telemetry.csv` next to the script (overwritten e
 
 ## Configurable Parameters (top of file)
 
-Current tuned values as of latest run (best lap: ~1:52, target 1:30):
+Parameters are split into three dicts — `FAST`, `LIGHT`, and `TECH`. `get_params(S)` selects the right dict based on `distFromStart` vs `FAST_END` and `LIGHT_END`.
 
+**Shared globals:**
 ```python
-# Steering
-STEER_GAIN = 50             # steering sensitivity (raised from 30 for more responsive turning)
-CENTERING_GAIN = 0.20       # track-center correction
-STEER_LOCK = 0.366          # max steering lock in radians (~21°)
-STEER_ATTN_SPEED = 80       # km/h above which attenuation kicks in
-STEER_ATTN_COEFF = 0.05     # multiplier for speed-based attenuation
-
-# Stuck recovery
-STUCK_THRESHOLD = 100       # steps before stuck recovery (~2 seconds)
-STUCK_REVERSE_STEER = 0.5   # steering intensity while reversing
-
-# Traction control
+FAST_END  = 1900   # metres: 0–FAST_END = FAST section
+LIGHT_END = 2800   # metres: FAST_END–LIGHT_END = LIGHT section, above = TECH
+STUCK_THRESHOLD = 100
+STUCK_REVERSE_STEER = 0.5
 ENABLE_TRACTION_CONTROL = True
-# Threshold: 4 rad/s rear-front slip; penalty: -0.30 accel per step
-
-# RPM-based gear shifting
-RPM_UPSHIFT = 18500         # upshift RPM (intentionally high — user tuned)
-RPM_DOWNSHIFT = [0, 3300, 6200, 7000, 7300, 7700]
-GEAR_SHIFT_DELAY = 10       # steps cooldown between shifts
-
-# Dynamic target speed (from track[9] forward sensor)
-MAX_SPEED = 300             # km/h at full straight
-MIN_SPEED = 56              # km/h minimum in tight turns
-LOOK_AHEAD_FAR = 110        # metres — full speed above this
-LOOK_AHEAD_NEAR = 70        # metres (legacy, not used in current formula)
-
-# Sigmoid acceleration/braking (separate scales)
-ACCEL_SIGMOID_SCALE = 3.29  # steepness for throttle
-BRAKE_SIGMOID_SCALE = 3.29  # steepness for braking (separate variable)
-
-# Software ABS (currently disabled in apply_abs — returns brake unchanged)
-ABS_SLIP_THRESHOLD = 2.0
-ABS_MIN_SPEED = 3.0
-ABS_RANGE = 3.0
 ```
+
+**Per-section keys (same keys in `FAST`, `LIGHT`, and `TECH` dicts):**
+
+| Key | FAST | LIGHT | TECH | Description |
+|-----|------|-------|------|-------------|
+| `STEER_GAIN` | 45 | 45 | 55 | Steering sensitivity |
+| `CENTERING_GAIN` | 0.70 | 0.70 | 0.30 | Track-centre correction |
+| `STEER_LOCK` | 0.366 | 0.366 | 0.366 | Max steering lock (radians) |
+| `STEER_ATTN_SPEED` | 80 | 80 | 80 | km/h above which attenuation kicks in |
+| `STEER_ATTN_COEFF` | 0.05 | 0.05 | 0.05 | Speed-based attenuation multiplier |
+| `RPM_UPSHIFT` | 19000 | 19000 | 18000 | Upshift RPM |
+| `RPM_DOWNSHIFT` | [0,3300,5200,7000,7300,7700] | same | [0,3300,6200,7000,7300,7700] | Downshift thresholds per gear |
+| `GEAR_SHIFT_DELAY` | 10 | 10 | 10 | Steps cooldown between shifts |
+| `MAX_SPEED` | 300 | 300 | 305 | km/h — section top speed |
+| `MIN_SPEED` | 80 | 80 | 56 | km/h — section minimum speed |
+| `LOOK_AHEAD_FAR` | 110 | 110 | 110 | metres — full speed above this |
+| `ACCEL_SIGMOID_SCALE` | 0.5 | 0.5 | 0.4 | Throttle sigmoid steepness |
+| `BRAKE_SIGMOID_SCALE` | 0.5 | 0.5 | 0.4 | Brake sigmoid steepness |
+| `ABS_SLIP_THRESHOLD` | 2.0 | 2.0 | 2.0 | m/s — ABS engagement threshold |
+| `ABS_MIN_SPEED` | 3.0 | 3.0 | 3.0 | m/s — minimum speed for ABS |
+| `ABS_RANGE` | 3.0 | 3.0 | 3.0 | m/s — brake scaling range |
+| `TC_SLIP_THRESHOLD` | 4.0 | 4.0 | 5.0 | rear−front wheel spin diff triggering TC |
+| `TC_REDUCTION` | 0.20 | 0.20 | 0.30 | throttle cut per TC trigger |
