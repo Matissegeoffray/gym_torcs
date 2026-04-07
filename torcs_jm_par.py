@@ -450,6 +450,7 @@ LIGHT_END = 1900
 STUCK_THRESHOLD        = 100    # Steps before triggering stuck recovery (~2 seconds).
 STUCK_REVERSE_STEER    = 0.5    # Steering intensity while reversing.
 ENABLE_TRACTION_CONTROL = True  # Toggle traction control system.
+WHEEL_RADIUS = [0.3306, 0.3306, 0.3276, 0.3276]  # FL, FR, RL, RR
 
 # --- Fast section (long straight, gentle turns) ---
 FAST = {
@@ -467,8 +468,8 @@ FAST = {
     'ACCEL_SIGMOID_SCALE': 2,    # Throttle sigmoid steepness.
     'BRAKE_SIGMOID_SCALE': 2,    # Brake sigmoid steepness.
     'ABS_SLIP_THRESHOLD':  2.0,     # m/s — wheel slip above which ABS engages.
-    'ABS_MIN_SPEED':       3.0,     # m/s — don't apply ABS below this speed.
-    'ABS_RANGE':           3.0,     # m/s — slip range over which brake is scaled.
+    'ABS_MIN_SPEED':       50,     # m/s — don't apply ABS below this speed.
+    'ABS_RANGE':           1,     # m/s — slip range over which brake is scaled.
     'TC_SLIP_THRESHOLD':   4.0,     # wheel spin diff above which TC cuts throttle.
     'TC_REDUCTION':        0.20,    # throttle reduction per TC trigger.
 }
@@ -489,8 +490,8 @@ LIGHT = {
     'ACCEL_SIGMOID_SCALE': 4.29,    # Throttle sigmoid steepness.
     'BRAKE_SIGMOID_SCALE': 4.29,    # Brake sigmoid steepness.
     'ABS_SLIP_THRESHOLD':  2.0,     # m/s — wheel slip above which ABS engages.
-    'ABS_MIN_SPEED':       3.0,     # m/s — don't apply ABS below this speed.
-    'ABS_RANGE':           3.0,     # m/s — slip range over which brake is scaled.
+    'ABS_MIN_SPEED':       50,     # m/s — don't apply ABS below this speed.
+    'ABS_RANGE':           1.6,     # m/s — slip range over which brake is scaled.
     'TC_SLIP_THRESHOLD':   4.0,     # wheel spin diff above which TC cuts throttle.
     'TC_REDUCTION':        0.3,    # throttle reduction per TC trigger.
 }
@@ -511,8 +512,8 @@ TECH = {
     'ACCEL_SIGMOID_SCALE': 0.4,    # Throttle sigmoid steepness.
     'BRAKE_SIGMOID_SCALE': 0.4,    # Brake sigmoid steepness.
     'ABS_SLIP_THRESHOLD':  2.0,     # m/s — wheel slip above which ABS engages.
-    'ABS_MIN_SPEED':       3.0,     # m/s — don't apply ABS below this speed.
-    'ABS_RANGE':           3.0,     # m/s — slip range over which brake is scaled.
+    'ABS_MIN_SPEED':       50,     # m/s — don't apply ABS below this speed.
+    'ABS_RANGE':           1.6,     # m/s — slip range over which brake is scaled.
     'TC_SLIP_THRESHOLD':   5,     # wheel sp+in diff above which TC cuts throttle.
     'TC_REDUCTION':        0.30,    # throttle reduction per TC trigger.
 }
@@ -546,8 +547,26 @@ def calculate_throttle(S, P):
     return max(0.0, raw)
 
 def apply_abs(S, brake, P):
-    # ABS disabled — broken slip direction caused it to zero out brake on rear-wheel-drive.
-    return brake
+    speed_ms = S['speedX'] / 3.6          # 1. Vitesse du sol en m/s
+    if speed_ms < P['ABS_MIN_SPEED']:      # 2. Pas d'ABS en dessous de 3 m/s
+        return brake                       #    (à très basse vitesse c'est inutile)
+    
+    # 3. Vitesse "vue par les roues" — moyenne des 4 roues
+    #    wheelSpinVel = rad/s, × rayon = m/s au sol
+    wheel_ground_speed = sum(
+        S['wheelSpinVel'][i] * WHEEL_RADIUS[i] for i in range(4)
+    ) / 4.0
+    
+    # 4. Le SLIP = vitesse voiture - vitesse roues
+    #    Si positif → les roues tournent plus lentement que la voiture avance
+    #    → elles se bloquent !
+    slip = speed_ms - wheel_ground_speed
+    
+    # 5. Si le slip dépasse le seuil (2.0 m/s), réduire le frein
+    if slip > P['ABS_SLIP_THRESHOLD']:
+        brake -= (slip - P['ABS_SLIP_THRESHOLD']) / P['ABS_RANGE']
+    
+    return max(0.0, brake)
 
 def apply_brakes(S, P):
     target = dynamic_target_speed(S, P)
