@@ -464,8 +464,8 @@ FAST = {
     'MAX_SPEED':           300,     # km/h — full throttle on a straight.
     'MIN_SPEED':           80,      # km/h — minimum in fast-section turns.
     'LOOK_AHEAD_FAR':      110,     # metres — full speed above this.
-    'ACCEL_SIGMOID_SCALE': 0.5,    # Throttle sigmoid steepness.
-    'BRAKE_SIGMOID_SCALE': 0.5,    # Brake sigmoid steepness.
+    'ACCEL_SIGMOID_SCALE': 2,    # Throttle sigmoid steepness.
+    'BRAKE_SIGMOID_SCALE': 2,    # Brake sigmoid steepness.
     'ABS_SLIP_THRESHOLD':  2.0,     # m/s — wheel slip above which ABS engages.
     'ABS_MIN_SPEED':       3.0,     # m/s — don't apply ABS below this speed.
     'ABS_RANGE':           3.0,     # m/s — slip range over which brake is scaled.
