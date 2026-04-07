@@ -443,9 +443,9 @@ import math
 #   0 → FAST_END       : FAST section
 #   FAST_END → LIGHT_END : LIGHT section
 #   LIGHT_END → end    : TECH section
-FAST_END  = 800
-LIGHT_END = 1900
-
+FAST_END  = 700
+LIGHT_END = 2400
+TECH_END  = 2500
 # Shared (not section-dependent)
 STUCK_THRESHOLD        = 100    # Steps before triggering stuck recovery (~2 seconds).
 STUCK_REVERSE_STEER    = 0.5    # Steering intensity while reversing.
@@ -468,7 +468,7 @@ FAST = {
     'ACCEL_SIGMOID_SCALE': 2,    # Throttle sigmoid steepness.
     'BRAKE_SIGMOID_SCALE': 2,    # Brake sigmoid steepness.
     'ABS_SLIP_THRESHOLD':  2.0,     # m/s — wheel slip above which ABS engages.
-    'ABS_MIN_SPEED':       50,     # m/s — don't apply ABS below this speed.
+    'ABS_MIN_SPEED':       30,     # m/s — don't apply ABS below this speed.
     'ABS_RANGE':           1,     # m/s — slip range over which brake is scaled.
     'TC_SLIP_THRESHOLD':   4.0,     # wheel spin diff above which TC cuts throttle.
     'TC_REDUCTION':        0.20,    # throttle reduction per TC trigger.
@@ -484,7 +484,7 @@ LIGHT = {
     'RPM_UPSHIFT':         20000    ,   # Upshift RPM.
     'RPM_DOWNSHIFT':       [0, 3300, 5200, 7000, 7300, 7700],
     'GEAR_SHIFT_DELAY':    10,      # Steps cooldown between shifts.
-    'MAX_SPEED':           300,     # km/h — full throttle on a straight.
+    'MAX_SPEED':           330,     # km/h — full throttle on a straight.
     'MIN_SPEED':           80,      # km/h — minimum in fast-section turns.
     'LOOK_AHEAD_FAR':      110,     # metres — full speed above this.
     'ACCEL_SIGMOID_SCALE': 4.29,    # Throttle sigmoid steepness.
@@ -504,6 +504,28 @@ TECH = {
     'STEER_ATTN_SPEED':    80,      # km/h above which attenuation kicks in (lower for tighter turns).
     'STEER_ATTN_COEFF':    0.05,    # Speed-based attenuation multiplier.
     'RPM_UPSHIFT':         18000,   # Upshift RPM.
+    'RPM_DOWNSHIFT':       [0, 3300, 6200, 7000, 7300, 7700],
+    'GEAR_SHIFT_DELAY':    10,      # Steps cooldown between shifts.
+    'MAX_SPEED':           160,     # km/h — capped in technical section.
+    'MIN_SPEED':           56,      # km/h — minimum in tight turns.
+    'LOOK_AHEAD_FAR':      110,     # metres — full speed above this.
+    'ACCEL_SIGMOID_SCALE': 0.1,    # Throttle sigmoid steepness.
+    'BRAKE_SIGMOID_SCALE': 0.1,    # Brake sigmoid steepness.
+    'ABS_SLIP_THRESHOLD':  2.0,     # m/s — wheel slip above which ABS engages.
+    'ABS_MIN_SPEED':       50,     # m/s — don't apply ABS below this speed.
+    'ABS_RANGE':           1.6,     # m/s — slip range over which brake is scaled.
+    'TC_SLIP_THRESHOLD':   5,     # wheel sp+in diff above which TC cuts throttle.
+    'TC_REDUCTION':        0.30,    # throttle reduction per TC trigger.
+}
+
+# --- Normal section (90 degre corners) ---
+NORMAL = {
+    'STEER_GAIN':          60,      # Steering sensitivity.
+    'CENTERING_GAIN':      0.4,    # Track-centre correction strength.
+    'STEER_LOCK':          0.366,   # Max steering lock in radians (~21°).
+    'STEER_ATTN_SPEED':    80,      # km/h above which attenuation kicks in (lower for tighter turns).
+    'STEER_ATTN_COEFF':    0.05,    # Speed-based attenuation multiplier.
+    'RPM_UPSHIFT':         18500,   # Upshift RPM.
     'RPM_DOWNSHIFT':       [0, 3300, 6200, 7000, 7300, 7700],
     'GEAR_SHIFT_DELAY':    10,      # Steps cooldown between shifts.
     'MAX_SPEED':           305,     # km/h — capped in technical section.
@@ -526,7 +548,9 @@ def get_params(S):
         return FAST
     if dist < LIGHT_END:
         return LIGHT
-    return TECH
+    if dist <TECH_END:
+        return TECH
+    return NORMAL
 
 # ================= HELPER FUNCTIONS =================
 def calculate_steering(S, P):
@@ -654,6 +678,7 @@ if __name__ == "__main__":
             round(S['track'][9] if 'track' in S else 0, 1),
             round(dynamic_target_speed(S, get_params(S)) if 'track' in S else 0, 1),
             round(S.get('distFromStart', 0), 1),
+            print(S.get('distFromStart', 0)),
         ])
         C.respond_to_server()
     C.shutdown()
