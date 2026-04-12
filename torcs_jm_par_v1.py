@@ -473,14 +473,6 @@ def drive_example(c):
         R['gear']=6
     return
 
-if __name__ == "__main__":
-    C= Client(p=3001)
-    for step in range(C.maxSteps,0,-1):
-        C.get_servers_input()
-        drive_example(C)
-        C.respond_to_server()
-    C.shutdown()
-
 
 
 #############################################
@@ -490,7 +482,7 @@ if __name__ == "__main__":
 import math
 
 # ================= USER CONFIGURABLE PARAMETERS =================
-TARGET_SPEED = 100          # Target speed in km/h.
+TARGET_SPEED = 80          # Target speed in km/h.
 STEER_GAIN = 30             # Steering sensitivity. Higher = more aggressive turns.
 CENTERING_GAIN = 0.20       # How strongly the car corrects toward the center of the track.
 STEER_SPEED_COEFF = 0.002   # Reduces steering at high speed. Higher = more damping.
@@ -522,7 +514,7 @@ def apply_brakes(S):
     # Look-ahead: brake based on distance to track edge ahead.
     front_distance = S['track'][9]
     if front_distance < BRAKE_DIST_THRESHOLD:
-        brake = 0.8 * (1.0 - front_distance / BRAKE_DIST_THRESHOLD)
+        brake = 0.8 * ( - front_distance / BRAKE_DIST_THRESHOLD)
         return min(1.0, brake)
     # Fallback: brake if the car angle is already large.
     if abs(S['angle']) > BRAKE_ANGLE_THRESHOLD:
