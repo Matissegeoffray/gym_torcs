@@ -446,6 +446,8 @@ import math
 FAST_END  = 700
 LIGHT_END = 2400
 TECH_END  = 2500
+LAST_CORNER_APPROACH_START = 2600  # Start drifting to the right (wide entry)
+LAST_CORNER_START          = 2700  # Turn-in point, aim for left apex
 # Shared (not section-dependent)
 STUCK_THRESHOLD        = 100    # Steps before triggering stuck recovery (~2 seconds).
 STUCK_REVERSE_STEER    = 0.5    # Steering intensity while reversing.
@@ -472,6 +474,8 @@ FAST = {
     'ABS_RANGE':           1,     # m/s — slip range over which brake is scaled.
     'TC_SLIP_THRESHOLD':   4.0,     # wheel spin diff above which TC cuts throttle.
     'TC_REDUCTION':        0.20,    # throttle reduction per TC trigger.
+    'RACING_LINE_GAIN':    0.5,     # lateral offset amplitude for racing line (0=center, 1=full edge).
+    'TRACK_POS_TARGET':    0.0,     # Target lateral position (0=centre, +1=right, -1=left).
 }
 
 # --- Light section (even faster, between fast and technical) ---
@@ -494,6 +498,8 @@ LIGHT = {
     'ABS_RANGE':           1.6,     # m/s — slip range over which brake is scaled.
     'TC_SLIP_THRESHOLD':   4.0,     # wheel spin diff above which TC cuts throttle.
     'TC_REDUCTION':        0.3,    # throttle reduction per TC trigger.
+    'RACING_LINE_GAIN':    0.5,     # lateral offset amplitude for racing line (0=center, 1=full edge).
+    'TRACK_POS_TARGET':    0.0,     # Target lateral position (0=centre, +1=right, -1=left).
 }
 
 # --- Technical section (tight corners) ---
@@ -516,6 +522,7 @@ TECH = {
     'ABS_RANGE':           1.6,     # m/s — slip range over which brake is scaled.
     'TC_SLIP_THRESHOLD':   5,     # wheel sp+in diff above which TC cuts throttle.
     'TC_REDUCTION':        0.30,    # throttle reduction per TC trigger.
+    'TRACK_POS_TARGET':    0.0,     # Target lateral position (0=centre, +1=right, -1=left).
 }
 
 # --- Normal section (90 degre corners) ---
@@ -538,6 +545,21 @@ NORMAL = {
     'ABS_RANGE':           1.6,     # m/s — slip range over which brake is scaled.
     'TC_SLIP_THRESHOLD':   5,     # wheel sp+in diff above which TC cuts throttle.
     'TC_REDUCTION':        0.30,    # throttle reduction per TC trigger.
+    'TRACK_POS_TARGET':    0.0,     # Target lateral position (0=centre, +1=right, -1=left).
+}
+
+# --- Last corner: wide entry (position right before the corner) ---
+LAST_CORNER_APPROACH = {
+    **NORMAL,
+    'TRACK_POS_TARGET':    0.7,     # Push to the right side of the track.
+    'CENTERING_GAIN':      1.2,     # Stronger pull toward target position.
+}
+
+# --- Last corner: turn-in, aim for left apex ---
+LAST_CORNER = {
+    **NORMAL,
+    'TRACK_POS_TARGET':   -0.5,     # Target the left (inside) apex.
+    'CENTERING_GAIN':      1.2,     # Stronger pull toward apex.
 }
 
 # ================= SECTION SELECTOR =================
@@ -571,22 +593,16 @@ def calculate_throttle(S, P):
     return max(0.0, raw)
 
 def apply_abs(S, brake, P):
-    speed_ms = S['speedX'] / 3.6          # 1. Vitesse du sol en m/s
-    if speed_ms < P['ABS_MIN_SPEED']:      # 2. Pas d'ABS en dessous de 3 m/s
-        return brake                       #    (à très basse vitesse c'est inutile)
+    speed_ms = S['speedX'] / 3.6          
+    if speed_ms < P['ABS_MIN_SPEED']:    
+        return brake                       
     
-    # 3. Vitesse "vue par les roues" — moyenne des 4 roues
-    #    wheelSpinVel = rad/s, × rayon = m/s au sol
     wheel_ground_speed = sum(
         S['wheelSpinVel'][i] * WHEEL_RADIUS[i] for i in range(4)
     ) / 4.0
     
-    # 4. Le SLIP = vitesse voiture - vitesse roues
-    #    Si positif → les roues tournent plus lentement que la voiture avance
-    #    → elles se bloquent !
     slip = speed_ms - wheel_ground_speed
     
-    # 5. Si le slip dépasse le seuil (2.0 m/s), réduire le frein
     if slip > P['ABS_SLIP_THRESHOLD']:
         brake -= (slip - P['ABS_SLIP_THRESHOLD']) / P['ABS_RANGE']
     
