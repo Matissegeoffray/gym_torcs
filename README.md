@@ -1,114 +1,126 @@
-# TORCS Autonomous Driving Client
+# 🏎️ TORCS Autonomous Driving Agent
 
-This project implements a rule-based autonomous driving agent for [TORCS](http://torcs.sourceforge.net/) (The Open Racing Car Simulator) using the SCR (Simulated Car Racing) UDP protocol.
+> Rule-based autonomous racing bot for TORCS — from a bare UDP client to a fully-tuned agent with ABS, traction control, and section-adaptive parameters.
 
-The work progresses from a minimal base client (`torcs_jm_par_v1.py`) to a fully-tuned driving agent (`torcs_jm_par.py`) with adaptive speed control, ABS, traction control, and per-section track parameters.
-
----
-
-## Files at a Glance
-
-| File | Role |
-|------|------|
-| `torcs_jm_par_v1.py` | **Starting point** — base UDP client, simple fixed driving logic |
-| `torcs_jm_par.py` | **Final version** — full modular agent with all features |
+![Python](https://img.shields.io/badge/Python-3.x-blue)
+![Protocol](https://img.shields.io/badge/Protocol-SCR%20UDP-orange)
+![TORCS](https://img.shields.io/badge/Simulator-TORCS-green)
+![Deps](https://img.shields.io/badge/Dependencies-stdlib%20only-lightgrey)
 
 ---
 
-## Version 1 — `torcs_jm_par_v1.py`
+## 🎯 Objective
 
-This is the base version, built on top of the [snakeoil3](http://xed.ch/project/snakeoil/index.html) Python client for TORCS.
+Build a deterministic, rule-based driving agent that controls a car in TORCS through the SCR UDP protocol — starting from a minimal base client and iterating up to a fully-tuned bot with adaptive speed control, ABS, traction control, and per-section track parameters.
 
-It handles:
-- UDP socket connection to the TORCS server (SCR protocol)
-- Parsing sensor data from TORCS (`speedX`, `angle`, `trackPos`, `track`, `rpm`, etc.)
-- Sending control commands back (`steer`, `accel`, `brake`, `gear`)
-- Basic fixed-parameter steering and throttle logic
-
-**This is the starting point.** The driving logic is simple and not tuned for any specific track section.
+Project completed as part of the **ESILV A3 Algorithms & Autonomous Systems course** — rule-based control on a real racing simulator.
 
 ---
 
-## Final Version — `torcs_jm_par.py`
+## 📊 Results
 
-The final version adds a full set of improvements on top of V1:
+| Version | Behaviour | Stability |
+|---|---|---|
+| `torcs_jm_par_v1.py` (baseline) | Fixed steering + throttle | Leaves track on fast corners |
+| `torcs_jm_par.py` (final) | Section-adaptive, sigmoid control | Completes full laps reliably |
 
-### Section-based parameters
-The track is divided into 3 zones, each with its own set of tuned parameters:
+**Final agent** completes the track across all 4 section types (FAST → LIGHT → TECH → NORMAL) with no manual intervention — using only sensor data and hand-coded control laws.
+
+---
+
+## 🛠️ Stack
+
+- **Language**: Python 3 — `socket`, `math`, `csv`, `os` (no external dependencies)
+- **Simulator**: TORCS with SCR patch (`vtorcs-RL-color` included)
+- **Protocol**: SCR UDP — sensor parsing + action serialisation
+- **Telemetry**: CSV logging (`telemetry.csv`) for offline analysis
+
+---
+
+## 🔬 Approach
+
+### 1. UDP client & sensor parsing
+- UDP socket connects to the TORCS server on port 3001
+- `ServerState` parses sensor strings: `speedX`, `angle`, `trackPos`, `track[19]`, `rpm`, `wheelSpinVel`, `gear`, `stucktimer`, …
+- `DriverAction` serialises control outputs back to the server every step
+
+### 2. Section-based parameter system
+The track is divided into 6 zones, each with its own independently tuned config dict:
 
 | Zone | Distance | Character |
 |------|----------|-----------|
-| `FAST` | 0 – 1900 m | Long straights, high speed |
-| `LIGHT` | 1900 – 2800 m | Transition zone |
-| `TECH` | 2800 m+ | Technical section, tight corners |
+| `FAST` | 0 – 700 m | Long straights, high speed (≤ 300 km/h) |
+| `LIGHT` | 700 – 2400 m | Fast transition zone (≤ 330 km/h) |
+| `TECH` | 2400 – 2500 m | Tight corners (≤ 195 km/h) |
+| `NORMAL` | 2500 m+ | 90° corners (≤ 305 km/h) |
+| `LAST_CORNER_APPROACH` | 2600 m | Wide entry — push to right side |
+| `LAST_CORNER` | 2700 m | Turn-in to left apex |
 
-Each zone has independent values for steering gain, target speed, gear shift RPMs, sigmoid scales, ABS thresholds, etc.
+Each zone defines its own `STEER_GAIN`, `MAX_SPEED`, `RPM_UPSHIFT`, sigmoid scales, ABS thresholds, traction-control params, and racing-line target.
 
-### Key features
+### 3. Control modules
 
-- **Dynamic target speed** — forward distance sensors compute how much speed is safe based on the road ahead
-- **Sigmoid throttle & brake** — smooth acceleration and braking instead of binary on/off
-- **ABS** — prevents wheel lock-up under heavy braking
-- **Traction control** — reduces throttle when rear wheels spin faster than front wheels
-- **Gear logic** — RPM-based upshift/downshift with a configurable cooldown between shifts
-- **Stuck recovery** — detects when the car is stuck and applies reverse with counter-steering
-- **Telemetry** — writes `telemetry.csv` every run for debugging and tuning
+- **Steering** — angle correction + lateral centering, attenuated by speed above a configurable threshold
+- **Sigmoid throttle & brake** — smooth, continuous control output replacing binary on/off logic
+- **Dynamic target speed** — forward distance sensor (`track[9]`) sets safe speed based on road ahead
+- **ABS** — compares longitudinal speed to mean wheel-ground speed; modulates brake when slip is detected
+- **Traction control** — cuts throttle when rear wheels spin faster than front wheels
+- **Gear logic** — RPM-based upshift/downshift with a configurable step cooldown
+- **Stuck recovery** — detects prolonged zero-speed and reverses with counter-steer
+
+### 4. Telemetry
+Every run writes `telemetry.csv` with step-by-step: `speedX`, `rpm`, `gear`, `accel`, `brake`, `steer`, `trackPos`, `track9`, `target_speed`, `distFromStart` — used for manual tuning.
 
 ---
 
-## How to Run
+## 📂 Project structure
 
-TORCS must already be running and waiting for a client on the chosen port.
-
-```bash
-# Run the final version
-python torcs_jm_par.py --port 3001
-
-# Run the base version
-python torcs_jm_par_v1.py --port 3001
+```
+gym_torcs/
+├── torcs_jm_par.py          # Final agent — full modular implementation
+├── torcs_jm_par_v1.py       # Baseline — bare UDP client, fixed logic
+├── telemetry.csv            # Last-run telemetry (overwritten each run)
+├── practice.xml             # TORCS race config
+├── vtorcs-RL-color/         # Patched TORCS build (SCR + vision support)
+├── Etat de l'art/           # Background research documents
+└── README.md
 ```
 
-**Options:**
+---
+
+## ⚙️ How to run
+
+TORCS must already be running and waiting for a client on the target port.
+
+```bash
+# Final agent
+python torcs_jm_par.py --port 3001
+
+# Baseline
+python torcs_jm_par_v1.py --port 3001
+```
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--host` / `-H` | `localhost` | TORCS server host |
 | `--port` / `-p` | `3001` | TORCS server port |
-| `--steps` / `-m` | `100000` | Maximum simulation steps |
-| `--debug` / `-d` | off | Print full telemetry to stdout |
+| `--steps` / `-m` | `100000` | Max simulation steps (~50 steps/s) |
+| `--debug` / `-d` | off | Print full sensor telemetry to stdout |
 
 ---
 
-## Telemetry
+## 💡 Key takeaways
 
-After each run, `telemetry.csv` is written (overwritten) in the same directory.
-
-| Column | Description |
-|--------|-------------|
-| `step` | Timestep index |
-| `speedX` | Longitudinal speed (km/h) |
-| `rpm` | Engine RPM |
-| `gear` | Current gear |
-| `accel` | Throttle output (0–1) |
-| `brake` | Brake output (0–1) |
-| `steer` | Steering output (−1 to +1) |
-| `trackPos` | Lateral position (−1 = left edge, +1 = right edge) |
-| `track9` | Forward distance sensor (metres) |
-| `target_speed` | Computed target speed (km/h) |
+- **Section-based configs beat global tuning**: a single global parameter set works on straights or corners, never both — splitting the track into zones was the decisive step for stable lap completion.
+- **Sigmoid control is worth the extra lines**: replacing `if speed > target: brake` with a sigmoid gave smooth, continuous outputs that eliminated the brake-chatter visible in the V1 telemetry.
+- **ABS needs real wheel physics**: the first ABS version compared speeds naively and triggered randomly at low speed — computing actual wheel-ground speed from `wheelSpinVel × radius` fixed it immediately.
 
 ---
 
-## Requirements
+## 👤 Author
 
-- Python 3
-- TORCS with SCR patch (or vtorcs-RL-color included in this repo)
-- No external Python dependencies beyond the standard library
+**Matisse Geoffray** — 3rd-year Engineering Student at ESILV
 
----
+🔍 Looking for a **2-month ML / Data Science internship** (June–July 2026) — Paris or Singapore
 
-## Base Code
-
-This project builds on:
-- [vtorcs-RL-color](https://github.com/giuse/vtorcs) — patched TORCS for RL use
-- [snakeoil3](http://xed.ch/project/snakeoil/index.html) — original Python SCR client
-- [gym_torcs](https://github.com/ugo-nama-kun/gym_torcs) — OpenAI-gym-like wrapper (also included)
+📧 matisse.geoffray@gmail.com · [GitHub](https://github.com/Matissegeoffray)

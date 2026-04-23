@@ -645,7 +645,7 @@ def check_stuck(S, R):
     Returns True if stuck recovery was applied (skips normal driving logic)."""
     if S.get('stucktimer', 0) > STUCK_THRESHOLD:
         R['gear']  = -1
-        R['accel'] = 0.8
+        R['accel'] = 0.2
         R['brake'] = 0.0
         R['steer'] = -STUCK_REVERSE_STEER * S['angle']
         return True
